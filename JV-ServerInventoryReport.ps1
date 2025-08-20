@@ -529,10 +529,10 @@ header .brand{display:inline-block; line-height:0}
 header .brand img{width:35px;height:35px;border-radius:6px}
 header .brand:focus{outline:2px solid rgba(0,0,0,.2); outline-offset:3px}
 
-/* Tabs under header; use dynamic top from JS to avoid overlap */
+/* Tabs under header; centered */
 nav.tabs{
   position:sticky; top:var(--hdrH); z-index:25;
-  display:flex; flex-wrap:wrap; gap:6px; align-content:flex-start;
+  display:flex; flex-wrap:wrap; gap:6px; align-content:flex-start; justify-content:center;
   padding:10px 12px; background:#ffffff; border-bottom:1px solid #e5e7eb;
   overflow:visible!important; max-height:none
 }
