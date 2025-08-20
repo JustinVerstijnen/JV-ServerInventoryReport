@@ -50,6 +50,7 @@ function ConvertTo-HtmlTable {
     $frag = @($InputObject) |
             Select-Object -Property $Properties |
             ConvertTo-Html -Fragment -PreContent $pre
+    # ConvertTo-Html levert string[] → samenvoegen + compacte class
     ($frag -join "`n") -replace '<table>', '<table class=""compact"">'
   } catch {
     New-Alert -Text "Kon tabel '$Title' niet renderen: $($_.Exception.Message)" -Type error
@@ -93,7 +94,7 @@ function Add-Section {
     [Parameter(Mandatory)][string]$BodyHtml
   )
 @"
-  <section id=""$Id"" class=""tab-content"" aria-labelledby=""tab-$Id"">
+  <section id=""$Id"" class=""tab-content"" aria-labelledby=""tab-$Id"" style=""display:none;"">
     <div class=""section"">
       <h2>$Title</h2>
       $BodyHtml
@@ -174,8 +175,21 @@ try {
 
   $systeminfoRaw = try { (cmd /c systeminfo) -join "`r`n" } catch { '' }
 
-  $sysHtml  = ConvertTo-KeyValueList -Object $sysSummary -Title 'Overzicht'
-  if ($disksum)     { $sysHtml += ConvertTo-HtmlTable -InputObject $disksum -Title 'Volumes (samenvatting)' -Properties * }
+  # Top summary cards horen bij System Info (alleen hier tonen)
+  $topCards = @"
+  <div class='grid'>
+    <div class='card'><h4>Computer</h4><p>$env:COMPUTERNAME</p></div>
+    <div class='card'><h4>OS</h4><p>$($os.Caption)</p></div>
+    <div class='card'><h4>Versie</h4><p>$($os.Version)</p></div>
+    <div class='card'><h4>Uptime (dagen)</h4><p>$uptimeDays</p></div>
+    <div class='card'><h4>CPU</h4><p>$($proc.Name)</p></div>
+    <div class='card'><h4>RAM (GB)</h4><p>$([Math]::Round($cs.TotalPhysicalMemory/1GB,2)) totaal / $([Math]::Round($os.FreePhysicalMemory*1KB/1GB,2)) vrij</p></div>
+  </div>
+"@
+
+  $sysHtml  = $topCards
+  $sysHtml += ConvertTo-KeyValueList -Object $sysSummary -Title 'Overzicht'
+  if ($disksum)       { $sysHtml += ConvertTo-HtmlTable -InputObject $disksum -Title 'Volumes (samenvatting)' -Properties * }
   if ($systeminfoRaw) { $sysHtml += Format-Preformatted -Text $systeminfoRaw -Title 'systeminfo (ruwe output)' }
 
   $reportSections.Add((Add-Section -Id 'system' -Title 'System Info' -BodyHtml $sysHtml))
@@ -571,7 +585,7 @@ main{padding:18px}
 .alert.info{background:#1e293b;color:#93c5fd}
 .alert.ok{background:#064e3b;color:#a7f3d0}
 
-/* Preformatted blok: volledige inhoud, maar compact zichtbaar en scrollbaar */
+/* Preformatted blok: volledige inhoud, maar compact zichtbaar en scrollbaar (ca. 10–12 regels) */
 pre{background:#0a0f1a;border:1px solid #1e293b;border-radius:10px;padding:12px;overflow:auto;max-height:15em;white-space:pre}
 
 /* Tabel */
@@ -602,7 +616,7 @@ footer{opacity:.7;font-size:12px;padding:12px 18px}
 
 $js = @'
 (function(){
-  // Hoogte header meten en doorgeven aan CSS var --hdrH
+  // Hoogte header meten en naar CSS-var --hdrH schrijven, zodat tabs netjes onder header blijven
   var hdr = document.querySelector("header");
   if (hdr) {
     var h = Math.round(hdr.getBoundingClientRect().height);
@@ -658,18 +672,6 @@ foreach($it in $idsAndTitles){
   $nav += ('<a id="tab-{0}" class="tab-link" href="#{0}">{1}</a>' -f $it.Id, $it.Title)
 }
 
-# Top summary cards (best effort; als vars ontbreken toont hij lege waarden)
-$topCards = @"
-  <div class='grid'>
-    <div class='card'><h4>Computer</h4><p>$env:COMPUTERNAME</p></div>
-    <div class='card'><h4>OS</h4><p>$($os.Caption)</p></div>
-    <div class='card'><h4>Versie</h4><p>$($os.Version)</p></div>
-    <div class='card'><h4>Uptime (dagen)</h4><p>$(if($safeBoot){ [Math]::Round((New-TimeSpan -Start $safeBoot -End (Get-Date)).TotalDays,1) } else { 'n/a' })</p></div>
-    <div class='card'><h4>CPU</h4><p>$($proc.Name)</p></div>
-    <div class='card'><h4>RAM (GB)</h4><p>$([Math]::Round($cs.TotalPhysicalMemory/1GB,2)) totaal / $([Math]::Round($os.FreePhysicalMemory*1KB/1GB,2)) vrij</p></div>
-  </div>
-"@
-
 $html = @"
 <!DOCTYPE html>
 <html lang="nl">
@@ -688,7 +690,6 @@ $html = @"
     $($nav -join "`n")
   </nav>
   <main>
-    $topCards
     $($reportSections -join "`n")
   </main>
   <footer>Rapport gegenereerd door ServerInventory-Report.ps1</footer>
