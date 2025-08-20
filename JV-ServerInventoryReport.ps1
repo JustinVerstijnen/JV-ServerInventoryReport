@@ -50,29 +50,24 @@ function ConvertTo-HtmlTable {
     $frag = @($InputObject) |
             Select-Object -Property $Properties |
             ConvertTo-Html -Fragment -PreContent $pre
-    # ConvertTo-Html levert string[] → samenvoegen + compacte class
-    ($frag -join "`n") -replace '<table>', '<table class=""compact"">'
+    ($frag -join "`n") -replace '<table>', '<table class="compact">'
   } catch {
     New-Alert -Text "Kon tabel '$Title' niet renderen: $($_.Exception.Message)" -Type error
   }
 }
 
-# Verticale key-value lijst (System Info)
-function ConvertTo-KeyValueList {
+function ConvertTo-NameValueTable {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][object]$Object,
     [string[]]$Properties,
-    [string]$Title
+    [string]$Title = 'Overzicht'
   )
   $props = if ($Properties) { $Properties } else { $Object.PSObject.Properties.Name }
   $rows = foreach ($p in $props) {
-    $label = [System.Net.WebUtility]::HtmlEncode($p)
-    $val   = [System.Net.WebUtility]::HtmlEncode( ($Object.$p | Out-String).Trim() )
-    "<div class='kv-row'><dt>$label</dt><dd>$val</dd></div>"
+    [PSCustomObject]@{ Naam = $p; Waarde = (($Object.$p | Out-String).Trim()) }
   }
-  $pre = $( if ($Title) { "<h3>$Title</h3>" } else { '' } )
-  "$pre<dl class='kv'>$($rows -join '')</dl>"
+  ConvertTo-HtmlTable -InputObject $rows -Title $Title -Properties 'Naam','Waarde'
 }
 
 function Format-Preformatted {
@@ -86,17 +81,23 @@ function Format-Preformatted {
   "$pre<pre>$enc</pre>"
 }
 
+# Sectie renderer met optionele omschrijving
 function Add-Section {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Id,
     [Parameter(Mandatory)][string]$Title,
-    [Parameter(Mandatory)][string]$BodyHtml
+    [Parameter(Mandatory)][string]$BodyHtml,
+    [string]$Description
   )
+  $descHtml = if ($Description) {
+    "<div class='desc'>$([System.Net.WebUtility]::HtmlEncode($Description))</div>"
+  } else { '' }
 @"
-  <section id=""$Id"" class=""tab-content"" aria-labelledby=""tab-$Id"" style=""display:none;"">
-    <div class=""section"">
+  <section id='$Id' class='tab-content' aria-labelledby='tab-$Id'>
+    <div class='section'>
       <h2>$Title</h2>
+      $descHtml
       $BodyHtml
     </div>
   </section>
@@ -110,7 +111,6 @@ function Format-Percent {
   [math]::Round(($Part/$Whole)*100,2).ToString('0.##') + '%'
 }
 
-# Veilige DMTF -> DateTime conversie
 function ConvertFrom-DmtfDate {
   [CmdletBinding()]
   param([string]$Dmtf)
@@ -128,6 +128,20 @@ if (-not $OutputPath) {
 $reportSections = New-Object System.Collections.Generic.List[string]
 #endregion
 
+#region === Omschrijvingen per tab ===
+$sectionDescriptions = @{
+  system   = 'Samenvatting van systeemkenmerken (OS, CPU, geheugen) en ruwe systeminfo-uitvoer.'
+  network  = 'Netwerkconfiguratie van adapters, inclusief IPs, gateways, DNS en ipconfig-output.'
+  firewall = 'Firewall-profielen, aangepaste regels en luisterende TCP-poorten.'
+  storage  = 'Overzicht van vaste volumes: formaat, totale capaciteit en vrije ruimte.'
+  apps     = 'Geïnstalleerde software uit Uninstall-registratiesleutels (64/32-bit en per gebruiker).'
+  roles    = 'Geïnstalleerde rollen/features en detectie van SQL/IIS (incl. sites, bindings en certificaten).'
+  services = 'Alle Windows services met status, starttype, account en pad.'
+  shares   = 'SMB-shares, share-permissies en NTFS-ACLs (excl. administratieve shares).'
+  printers = 'Geïnstalleerde printers, poorten, drivers en (indien bekend) IP-adressen.'
+}
+#endregion
+
 #region === System Info ===
 try {
   $cs   = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
@@ -139,22 +153,7 @@ try {
   $safeBoot    = ConvertFrom-DmtfDate $os.LastBootUpTime
   $uptimeDays  = if($safeBoot){ [Math]::Round((New-TimeSpan -Start $safeBoot -End (Get-Date)).TotalDays,1) } else { 'n/a' }
 
-  # Disk-samenvatting
-  if (Test-CommandExists Get-Volume) {
-    $disksum = Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveType -eq 'Fixed' -and $_.FileSystem } |
-      Select-Object DriveLetter, FileSystem,
-        @{n='SizeGB';e={[math]::Round($_.Size/1GB,2)}},
-        @{n='FreeGB';e={[math]::Round($_.SizeRemaining/1GB,2)}},
-        @{n='Free%';e={Format-Percent $_.SizeRemaining $_.Size}}
-  } else {
-    $disksum = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue |
-      Select-Object DeviceID, FileSystem,
-        @{n='SizeGB';e={[math]::Round(($_.Size)/1GB,2)}},
-        @{n='FreeGB';e={[math]::Round(($_.FreeSpace)/1GB,2)}},
-        @{n='Free%';e={Format-Percent $_.FreeSpace $_.Size}}
-  }
-
-  # System summary als key-value list (VERTICAAL)
+  # System summary als tabel (Naam/Waarde)
   $sysSummary = [PSCustomObject]@{
     ComputerName   = $env:COMPUTERNAME
     Domain         = $cs.Domain
@@ -175,7 +174,7 @@ try {
 
   $systeminfoRaw = try { (cmd /c systeminfo) -join "`r`n" } catch { '' }
 
-  # Top summary cards horen bij System Info (alleen hier tonen)
+  # Top-cards + overzicht + ruwe systeminfo
   $topCards = @"
   <div class='grid'>
     <div class='card'><h4>Computer</h4><p>$env:COMPUTERNAME</p></div>
@@ -188,13 +187,12 @@ try {
 "@
 
   $sysHtml  = $topCards
-  $sysHtml += ConvertTo-KeyValueList -Object $sysSummary -Title 'Overzicht'
-  if ($disksum)       { $sysHtml += ConvertTo-HtmlTable -InputObject $disksum -Title 'Volumes (samenvatting)' -Properties * }
+  $sysHtml += ConvertTo-NameValueTable -Object $sysSummary -Title 'Overzicht'
   if ($systeminfoRaw) { $sysHtml += Format-Preformatted -Text $systeminfoRaw -Title 'systeminfo (ruwe output)' }
 
-  $reportSections.Add((Add-Section -Id 'system' -Title 'System Info' -BodyHtml $sysHtml))
+  $reportSections.Add((Add-Section -Id 'system' -Title 'System Info' -BodyHtml $sysHtml -Description $sectionDescriptions.system))
 } catch {
-  $reportSections.Add((Add-Section -Id 'system' -Title 'System Info' -BodyHtml (New-Alert -Text "Kon systeeminfo niet ophalen: $($_.Exception.Message)")))
+  $reportSections.Add((Add-Section -Id 'system' -Title 'System Info' -BodyHtml (New-Alert -Text "Kon systeeminfo niet ophalen: $($_.Exception.Message)") -Description $sectionDescriptions.system))
 }
 #endregion
 
@@ -238,9 +236,9 @@ try {
   if ($adapterRows) { $netHtml += ConvertTo-HtmlTable -InputObject $adapterRows -Title 'Netwerkadapters' -Properties 'Interface','Index','Description','Status','MAC','IPv4','IPv6','Gateway','DNS','DHCP','IPv6Enabled' }
   if ($ipconfigRaw) { $netHtml += Format-Preformatted -Text $ipconfigRaw -Title 'ipconfig /all (ruwe output)' }
 
-  $reportSections.Add((Add-Section -Id 'network' -Title 'Netwerkconfiguratie' -BodyHtml $netHtml))
+  $reportSections.Add((Add-Section -Id 'network' -Title 'Netwerkconfiguratie' -BodyHtml $netHtml -Description $sectionDescriptions.network))
 } catch {
-  $reportSections.Add((Add-Section -Id 'network' -Title 'Netwerkconfiguratie' -BodyHtml (New-Alert -Text "Kon netwerkinfo niet ophalen: $($_.Exception.Message)")))
+  $reportSections.Add((Add-Section -Id 'network' -Title 'Netwerkconfiguratie' -BodyHtml (New-Alert -Text "Kon netwerkinfo niet ophalen: $($_.Exception.Message)") -Description $sectionDescriptions.network))
 }
 #endregion
 
@@ -269,9 +267,9 @@ try {
   if ($tcpListen) { $fwHtml += ConvertTo-HtmlTable -InputObject $tcpListen -Title 'Luisterende TCP-poorten (Get-NetTCPConnection)' -Properties * }
   if ($netstatRaw) { $fwHtml += Format-Preformatted -Text $netstatRaw -Title 'netstat -a -n -o (ruwe output)' }
 
-  $reportSections.Add((Add-Section -Id 'firewall' -Title 'Firewall en Poorten' -BodyHtml $fwHtml))
+  $reportSections.Add((Add-Section -Id 'firewall' -Title 'Firewall en Poorten' -BodyHtml $fwHtml -Description $sectionDescriptions.firewall))
 } catch {
-  $reportSections.Add((Add-Section -Id 'firewall' -Title 'Firewall en Poorten' -BodyHtml (New-Alert -Text "Kon firewall/poorten niet ophalen: $($_.Exception.Message)")))
+  $reportSections.Add((Add-Section -Id 'firewall' -Title 'Firewall en Poorten' -BodyHtml (New-Alert -Text "Kon firewall/poorten niet ophalen: $($_.Exception.Message)") -Description $sectionDescriptions.firewall))
 }
 #endregion
 
@@ -291,9 +289,9 @@ try {
         @{n='Free%';e={Format-Percent $_.FreeSpace $_.Size}}
   }
   $stHtml = ConvertTo-HtmlTable -InputObject $vols -Title 'Volumes' -Properties *
-  $reportSections.Add((Add-Section -Id 'storage' -Title 'Storage' -BodyHtml $stHtml))
+  $reportSections.Add((Add-Section -Id 'storage' -Title 'Storage' -BodyHtml $stHtml -Description $sectionDescriptions.storage))
 } catch {
-  $reportSections.Add((Add-Section -Id 'storage' -Title 'Storage' -BodyHtml (New-Alert -Text "Kon storage-informatie niet ophalen: $($_.Exception.Message)")))
+  $reportSections.Add((Add-Section -Id 'storage' -Title 'Storage' -BodyHtml (New-Alert -Text "Kon storage-informatie niet ophalen: $($_.Exception.Message)") -Description $sectionDescriptions.storage))
 }
 #endregion
 
@@ -328,9 +326,9 @@ try {
   $apps = @($apps) | Sort-Object Name, Version
 
   $appHtml = ConvertTo-HtmlTable -InputObject $apps -Title 'Geinstalleerde software' -Properties 'Name','Version','Publisher','InstallDate','Wow6432','UninstallString'
-  $reportSections.Add((Add-Section -Id 'apps' -Title 'Applications' -BodyHtml $appHtml))
+  $reportSections.Add((Add-Section -Id 'apps' -Title 'Applications' -BodyHtml $appHtml -Description $sectionDescriptions.apps))
 } catch {
-  $reportSections.Add((Add-Section -Id 'apps' -Title 'Applications' -BodyHtml (New-Alert -Text "Kon applicatielijst niet ophalen: $($_.Exception.Message)")))
+  $reportSections.Add((Add-Section -Id 'apps' -Title 'Applications' -BodyHtml (New-Alert -Text "Kon applicatielijst niet ophalen: $($_.Exception.Message)") -Description $sectionDescriptions.apps))
 }
 #endregion
 
@@ -346,7 +344,7 @@ try {
   }
 } catch { $rolesHtml += New-Alert -Text "Fout bij ophalen rollen: $($_.Exception.Message)" }
 
-# SQL Server databases
+# SQL: Instances
 function Get-SqlInstanceNames {
   $instances = @()
   try {
@@ -366,7 +364,8 @@ function Get-SqlInstanceNames {
   $instances | Select-Object -Unique
 }
 
-function Get-SqlDbInfo {
+# Alleen MDF-paden per database (SMO of sqlcmd fallback)
+function Get-SqlDbMdfInfo {
   $out = @()
   $instances = Get-SqlInstanceNames
   if (-not $instances) { return $out }
@@ -380,21 +379,18 @@ function Get-SqlDbInfo {
     if ($smoLoaded) {
       try {
         $srv = New-Object Microsoft.SqlServer.Management.Smo.Server $inst
-        $srv.SetDefaultInitFields([Microsoft.SqlServer.Management.Smo.Database], 'Name')
         foreach ($db in $srv.Databases) {
           try {
-            $files = $db.EnumFiles()
+            $files = $db.EnumFiles() | Where-Object { $_.FileName -match '\.mdf$' }
             foreach ($f in $files) {
               $out += [PSCustomObject]@{
-                Instance      = $inst
-                Database      = $db.Name
-                FileLogical   = $f.LogicalName
-                FileType      = $f.FileType
-                PhysicalPath  = $f.FileName
+                Instance = $inst
+                Database = $db.Name
+                MdfPath  = $f.FileName
               }
             }
           } catch {
-            $out += [PSCustomObject]@{ Instance=$inst; Database=$db.Name; FileLogical='n/a'; FileType='n/a'; PhysicalPath='(kon bestandsgegevens niet ophalen)' }
+            $out += [PSCustomObject]@{ Instance=$inst; Database=$db.Name; MdfPath='(kon MDF-pad niet ophalen)' }
           }
         }
         continue
@@ -402,13 +398,17 @@ function Get-SqlDbInfo {
     }
     $sqlcmd = Get-Command sqlcmd.exe -ErrorAction SilentlyContinue
     if ($sqlcmd) {
-      $query = "set nocount on; select DB_NAME(database_id) as DBName, physical_name from sys.master_files order by 1,2;"
+      $query = "set nocount on; select DB_NAME(database_id) as DBName, physical_name from sys.master_files where type_desc='ROWS' and physical_name like '%.mdf' order by 1,2;"
       try {
-        $raw = & $sqlcmd.Source -S $inst -E -Q $query -W -s '|' 2>$null
+        $raw = & $sqlcmd.Source -S $inst -E -Q $query -h -1 -W -s '|' 2>$null
         foreach ($line in $raw) {
-          if ($line -match '^[^|]+\|') {
+          if ($line -match '\|') {
             $parts = $line -split '\|'
-            $out += [PSCustomObject]@{ Instance=$inst; Database=$parts[0].Trim(); FileLogical=''; FileType=''; PhysicalPath=$parts[1].Trim() }
+            $dbn   = $parts[0].Trim()
+            $path  = $parts[1].Trim()
+            if ($dbn -and $path -and $path -match '\.mdf$') {
+              $out += [PSCustomObject]@{ Instance=$inst; Database=$dbn; MdfPath=$path }
+            }
           }
         }
       } catch {}
@@ -418,9 +418,9 @@ function Get-SqlDbInfo {
 }
 
 try {
-  $sqlData = Get-SqlDbInfo
+  $sqlData = Get-SqlDbMdfInfo
   if ($sqlData -and $sqlData.Count -gt 0) {
-    $rolesHtml += ConvertTo-HtmlTable -InputObject $sqlData -Title 'SQL Server databases en bestanden' -Properties 'Instance','Database','FileLogical','FileType','PhysicalPath'
+    $rolesHtml += ConvertTo-HtmlTable -InputObject $sqlData -Title 'SQL Server databases (.MDF)' -Properties 'Instance','Database','MdfPath'
   } else {
     $rolesHtml += New-Alert -Text 'SQL Server lijkt niet aanwezig of toegankelijk op deze host.' -Type error
   }
@@ -441,12 +441,12 @@ try {
       $bindings = Get-WebBinding -Name $s.Name -ErrorAction SilentlyContinue
       foreach ($b in $bindings) {
         $proto = $b.protocol
-        $info  = $b.bindingInformation # ip:port:host
-        $ip,$port,$host = $info -split ':'
+        $info  = $b.bindingInformation   # ip:port:host
+        $ip,$port,$hostHeader = $info -split ':'
         $certThumb = $null
         $certNames = $null
         if ($proto -eq 'https') {
-          $bindPath = "IIS:\SslBindings\$ip!$port!$host"
+          $bindPath = "IIS:\SslBindings\$ip!$port!$hostHeader"
           if (Test-Path $bindPath) {
             $ssl = Get-Item $bindPath -ErrorAction SilentlyContinue
             $certThumb = $ssl.Thumbprint
@@ -466,7 +466,7 @@ try {
           Protocol    = $proto
           IP          = $ip
           Port        = $port
-          HostHeader  = $host
+          HostHeader  = $hostHeader
           CertThumb   = $certThumb
           CertNames   = ($certNames -join '; ')
         }
@@ -478,16 +478,16 @@ try {
   }
 } catch { $rolesHtml += New-Alert -Text "Fout bij IIS-informatie: $($_.Exception.Message)" }
 
-$reportSections.Add((Add-Section -Id 'roles' -Title 'Server Roles / SQL / IIS' -BodyHtml $rolesHtml))
+$reportSections.Add((Add-Section -Id 'roles' -Title 'Server Roles / SQL / IIS' -BodyHtml $rolesHtml -Description $sectionDescriptions.roles))
 #endregion
 
 #region === Services ===
 try {
   $svcs = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Select-Object Name, DisplayName, State, StartMode, StartName, PathName
   $svcHtml = ConvertTo-HtmlTable -InputObject $svcs -Title 'Alle services' -Properties 'Name','DisplayName','State','StartMode','StartName','PathName'
-  $reportSections.Add((Add-Section -Id 'services' -Title 'Services' -BodyHtml $svcHtml))
+  $reportSections.Add((Add-Section -Id 'services' -Title 'Services' -BodyHtml $svcHtml -Description $sectionDescriptions.services))
 } catch {
-  $reportSections.Add((Add-Section -Id 'services' -Title 'Services' -BodyHtml (New-Alert -Text "Kon services niet ophalen: $($_.Exception.Message)")))
+  $reportSections.Add((Add-Section -Id 'services' -Title 'Services' -BodyHtml (New-Alert -Text "Kon services niet ophalen: $($_.Exception.Message)") -Description $sectionDescriptions.services))
 }
 #endregion
 
@@ -517,9 +517,9 @@ try {
   } else {
     $sharesHtml += New-Alert -Text 'Get-SmbShare niet beschikbaar op dit systeem.' -Type warn
   }
-  $reportSections.Add((Add-Section -Id 'shares' -Title 'Shares' -BodyHtml $sharesHtml))
+  $reportSections.Add((Add-Section -Id 'shares' -Title 'Shares' -BodyHtml $sharesHtml -Description $sectionDescriptions.shares))
 } catch {
-  $reportSections.Add((Add-Section -Id 'shares' -Title 'Shares' -BodyHtml (New-Alert -Text "Kon share-informatie niet ophalen: $($_.Exception.Message)")))
+  $reportSections.Add((Add-Section -Id 'shares' -Title 'Shares' -BodyHtml (New-Alert -Text "Kon share-informatie niet ophalen: $($_.Exception.Message)") -Description $sectionDescriptions.shares))
 }
 #endregion
 
@@ -551,15 +551,15 @@ try {
   } else {
     $prtHtml += New-Alert -Text 'Printer-cmdlets niet beschikbaar (PrintManagement module ontbreekt?).' -Type warn
   }
-  $reportSections.Add((Add-Section -Id 'printers' -Title 'Printers' -BodyHtml $prtHtml))
+  $reportSections.Add((Add-Section -Id 'printers' -Title 'Printers' -BodyHtml $prtHtml -Description $sectionDescriptions.printers))
 } catch {
-  $reportSections.Add((Add-Section -Id 'printers' -Title 'Printers' -BodyHtml (New-Alert -Text "Kon printerinformatie niet ophalen: $($_.Exception.Message)")))
+  $reportSections.Add((Add-Section -Id 'printers' -Title 'Printers' -BodyHtml (New-Alert -Text "Kon printerinformatie niet ophalen: $($_.Exception.Message)") -Description $sectionDescriptions.printers))
 }
 #endregion
 
 #region === HTML skeleton ===
 $css = @'
-:root{--hdrH:64px;--tabsH:44px}
+:root{--hdrH:64px}
 *{box-sizing:border-box}html{font-family:Segoe UI,Arial;line-height:1.35}body{margin:0;background:#0f172a;color:#e5e7eb}
 
 /* Sticky header (blauwe balk) */
@@ -568,7 +568,12 @@ header h1{margin:0;font-size:20px}
 header .meta{opacity:.9;font-size:12px}
 
 /* Sticky tabs onder header */
-nav.tabs{position:sticky;top:var(--hdrH);z-index:25;display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;background:#111827;border-bottom:1px solid #1f2937}
+nav.tabs{
+  position:sticky; top:64px; z-index:25;
+  display:flex; flex-wrap:wrap; gap:6px;
+  padding:10px 12px; background:#111827; border-bottom:1px solid #1f2937;
+  overflow:visible;
+}
 nav.tabs a{padding:8px 12px;border-radius:10px;background:#1f2937;color:#e5e7eb;text-decoration:none;font-size:13px;transition:.15s}
 nav.tabs a:hover{background:#374151}
 nav.tabs a.active{background:#2563eb;color:#fff}
@@ -576,6 +581,12 @@ nav.tabs a.active{background:#2563eb;color:#fff}
 main{padding:18px}
 .section{background:#0b1220;border:1px solid #1e293b;border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 1px 0 rgba(255,255,255,.03) inset}
 .section h2{margin-top:0;font-size:18px;color:#93c5fd}
+
+/* Omschrijving onder titel */
+.desc{
+  margin:8px 0 14px; font-size:13px; color:#cbd5e1;
+  background:#0a1324; border:1px solid #1e293b; border-radius:10px; padding:10px 12px;
+}
 
 /* Alerts */
 .alert{display:flex;gap:8px;align-items:flex-start;border-radius:10px;padding:10px 12px;margin:8px 0}
@@ -585,7 +596,7 @@ main{padding:18px}
 .alert.info{background:#1e293b;color:#93c5fd}
 .alert.ok{background:#064e3b;color:#a7f3d0}
 
-/* Preformatted blok: volledige inhoud, maar compact zichtbaar en scrollbaar (ca. 10–12 regels) */
+/* Preformatted blok */
 pre{background:#0a0f1a;border:1px solid #1e293b;border-radius:10px;padding:12px;overflow:auto;max-height:15em;white-space:pre}
 
 /* Tabel */
@@ -602,57 +613,39 @@ tr:hover{background:#0f1a2c}
 .card h4{margin:0 0 6px 0;font-size:12px;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em}
 .card p{margin:0;font-size:14px;color:#e5e7eb}
 
-/* Verticale key-value lijst */
-.kv{margin:6px 0}
-.kv-row{display:grid;grid-template-columns:220px 1fr;gap:8px;padding:6px 8px;border-bottom:1px solid #1f2937}
-.kv-row dt{margin:0;color:#9ca3af}
-.kv-row dd{margin:0;color:#e5e7eb}
-
-/* Tabs: standaard verbergen; JS toont de actieve */
+/* Tabs: alles verbergen; alleen .active tonen */
 .tab-content{display:none}
+.tab-content.active{display:block}
 
 footer{opacity:.7;font-size:12px;padding:12px 18px}
 '@
 
+# JS: één actieve sectie + actieve tab
 $js = @'
 (function(){
-  // Hoogte header meten en naar CSS-var --hdrH schrijven, zodat tabs netjes onder header blijven
-  var hdr = document.querySelector("header");
-  if (hdr) {
-    var h = Math.round(hdr.getBoundingClientRect().height);
-    document.documentElement.style.setProperty("--hdrH", h+"px");
-  }
-
   var tabs = document.querySelectorAll("nav.tabs a");
   var secs = document.querySelectorAll(".tab-content");
 
-  function showTab(id){
-    // active class op tabs
-    for (var i=0;i<tabs.length;i++){
-      var t = tabs[i];
-      t.classList.toggle("active", t.getAttribute("href")==="#"+id);
+  function activate(id){
+    for (var i=0;i<secs.length;i++){
+      secs[i].classList.toggle("active", secs[i].id===id);
     }
-    // secties tonen/verbergen
-    for (var j=0;j<secs.length;j++){
-      secs[j].style.display = (secs[j].id===id) ? "block" : "none";
+    for (var j=0;j<tabs.length;j++){
+      var on = (tabs[j].getAttribute("href")==="#"+id);
+      tabs[j].classList.toggle("active", on);
     }
-    try { history.replaceState(null,"","#"+id); } catch(e){}
+    try{ history.replaceState(null,"","#"+id); }catch(e){}
   }
 
-  // Klik-handlers
-  for (var i=0;i<tabs.length;i++){
-    tabs[i].addEventListener("click", function(e){
+  for (var k=0;k<tabs.length;k++){
+    tabs[k].addEventListener("click", function(e){
       e.preventDefault();
-      var id = this.getAttribute("href").substring(1);
-      showTab(id);
+      activate(this.getAttribute("href").substring(1));
     });
   }
 
-  // Initiële tab op basis van hash (fallback: system)
-  var wanted = (location.hash || "#system").substring(1);
-  var valid = false;
-  for (var k=0;k<secs.length;k++){ if(secs[k].id===wanted){ valid=true; break; } }
-  showTab(valid ? wanted : "system");
+  // init: default 'system'
+  activate("system");
 })();
 '@
 
@@ -702,7 +695,7 @@ $html = @"
 #region === Write file ===
 try {
   $null = New-Item -Path (Split-Path $OutputPath) -ItemType Directory -Force -ErrorAction SilentlyContinue
-  $html | Out-File -FilePath $OutputPath -Encoding ASCII
+  $html | Out-File -FilePath $OutputPath -Encoding UTF8
   Write-Host "Rapport geschreven naar: $OutputPath" -ForegroundColor Cyan
 } catch {
   Write-Warning "Kon rapport niet wegschrijven: $($_.Exception.Message)"
