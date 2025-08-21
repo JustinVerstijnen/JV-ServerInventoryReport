@@ -1,3 +1,13 @@
+﻿# Justin Verstijnen Server Install Updates and Restart script
+# Github page: https://github.com/JustinVerstijnen/JV-ServerInventoryReport
+# Let's start!
+Write-Host "Script made by..." -ForegroundColor DarkCyan
+Write-Host "     _           _   _        __     __            _   _  _                  
+    | |_   _ ___| |_(_)_ __   \ \   / /__ _ __ ___| |_(_)(_)_ __   ___ _ __  
+ _  | | | | / __| __| | '_ \   \ \ / / _ \ '__/ __| __| || | '_ \ / _ \ '_ \ 
+| |_| | |_| \__ \ |_| | | | |   \ V /  __/ |  \__ \ |_| || | | | |  __/ | | |
+ \___/ \__,_|___/\__|_|_| |_|    \_/ \___|_|  |___/\__|_|/ |_| |_|\___|_| |_|
+                                                       |__/                  " -ForegroundColor DarkCyan                                                       
 [CmdletBinding()]
 param([string]$OutputPath)
 
