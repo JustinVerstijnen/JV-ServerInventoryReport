@@ -1,4 +1,9 @@
-﻿# Justin Verstijnen Server Install Updates and Restart script
+[CmdletBinding()]
+param(
+    [string]$OutputPath
+)
+
+# Justin Verstijnen Server Install Updates and Restart script
 # Github page: https://github.com/JustinVerstijnen/JV-ServerInventoryReport
 # Let's start!
 Write-Host "Script made by..." -ForegroundColor DarkCyan
@@ -7,10 +12,7 @@ Write-Host "     _           _   _        __     __            _   _  _
  _  | | | | / __| __| | '_ \   \ \ / / _ \ '__/ __| __| || | '_ \ / _ \ '_ \ 
 | |_| | |_| \__ \ |_| | | | |   \ V /  __/ |  \__ \ |_| || | | | |  __/ | | |
  \___/ \__,_|___/\__|_|_| |_|    \_/ \___|_|  |___/\__|_|/ |_| |_|\___|_| |_|
-                                                       |__/                  " -ForegroundColor DarkCyan                                                       
-[CmdletBinding()]
-param([string]$OutputPath)
-
+                                                       |__/                  " -ForegroundColor DarkCyan
 function Test-CommandExists {
   [CmdletBinding()] param([Parameter(Mandatory)][string]$Name)
   return [bool](Get-Command -Name $Name -ErrorAction SilentlyContinue)
