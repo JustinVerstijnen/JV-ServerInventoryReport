@@ -8,8 +8,9 @@
 .TAGS PowerShell, Script, Example
 .LICENSEURI https://opensource.org/licenses/MIT
 .PROJECTURI https://github.com/JustinVerstijnen/JV-ServerInventoryReport
-.ICONURI https://raw.githubusercontent.com//JV-ServerInventoryReport/icon.png
+.ICONURI https://raw.githubusercontent.com/JustinVerstijnen/JV-ServerInventoryReport/icon.png
 .RELEASENOTES First publish.
+.DESCRIPTION This repository contains a PowerShell script that creates a Server Inventory Report of any Windows Server instance.
 
 #>
 
