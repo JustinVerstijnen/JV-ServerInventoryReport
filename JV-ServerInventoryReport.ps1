@@ -1,15 +1,15 @@
 <#PSScriptInfo
 
-.VERSION 1.0.1
-.GUID e8f6c1a1-3a50-4e23-a4b8-91a6fdb6d8f3
+.VERSION 1.0.0
+.GUID c102bae3-0380-4624-8ff4-030df9fe9f6e
 .AUTHOR Justin Verstijnen
 .COMPANYNAME JustinVerstijnen
 .COPYRIGHT (c) 2025 Justin Verstijnen. All rights reserved.
 .TAGS PowerShell, Script, Example
 .LICENSEURI https://opensource.org/licenses/MIT
-.PROJECTURI https://github.com/jouwrepo
-.ICONURI https://raw.githubusercontent.com/jouwrepo/icon.png
-.RELEASENOTES Eerste publicatie.
+.PROJECTURI https://github.com/JustinVerstijnen/JV-ServerInventoryReport
+.ICONURI https://raw.githubusercontent.com//JV-ServerInventoryReport/icon.png
+.RELEASENOTES First publish.
 
 #>
 
