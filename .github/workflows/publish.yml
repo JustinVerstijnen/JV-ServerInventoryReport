@@ -1,0 +1,29 @@
+name: Publish to PowerShell Gallery
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.ps1'
+      - '**/*.psd1'
+      - '**/*.psm1'
+
+jobs:
+  publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PowerShellGet
+        shell: pwsh
+        run: Install-Module PowerShellGet -Force -Scope CurrentUser
+
+      - name: Publish module to PowerShell Gallery
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $apiKey = "${{ secrets.PSGALLERY_API_KEY }}"
+          Publish-Module -Path .\JouwModuleNaam -NuGetApiKey $apiKey -Verbose
