@@ -26,4 +26,5 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $apiKey = "${{ secrets.PSGALLERY_API_KEY }}"
-          Publish-Module -Path .\JouwModuleNaam -NuGetApiKey $apiKey -Verbose
+          Publish-Script -Path .\JV-ServerInventoryReport.ps1 -NuGetApiKey $apiKey -Verbose
+
