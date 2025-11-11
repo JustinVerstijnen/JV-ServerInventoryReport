@@ -6,8 +6,6 @@ on:
       - main
     paths:
       - '**/*.ps1'
-      - '**/*.psd1'
-      - '**/*.psm1'
 
 jobs:
   publish:
@@ -17,14 +15,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install PowerShellGet
+      - name: Update PowerShellGet and NuGet provider
         shell: pwsh
-        run: Install-Module PowerShellGet -Force -Scope CurrentUser
+        run: |
+          Install-PackageProvider -Name NuGet -Force
+          Install-Module PowerShellGet -Force -AllowClobber -Scope CurrentUser
+          Install-Module PackageManagement -Force -AllowClobber -Scope CurrentUser
 
-      - name: Publish module to PowerShell Gallery
+      - name: Publish script to PowerShell Gallery
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          Write-Host "Publishing JV-ServerInventoryReport.ps1 to PowerShell Gallery..."
           $apiKey = "${{ secrets.PSGALLERY_API_KEY }}"
-          Publish-Script -Path .\JV-ServerInventoryReport.ps1 -NuGetApiKey $apiKey -Verbose
-
+          Publish-Script -Path "./JV-ServerInventoryReport.ps1" -NuGetApiKey $apiKey -Verbose
