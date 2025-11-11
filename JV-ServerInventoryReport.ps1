@@ -1,3 +1,18 @@
+<#PSScriptInfo
+
+.VERSION 1.0.1
+.GUID e8f6c1a1-3a50-4e23-a4b8-91a6fdb6d8f3
+.AUTHOR Justin Verstijnen
+.COMPANYNAME JustinVerstijnen
+.COPYRIGHT (c) 2025 Justin Verstijnen. All rights reserved.
+.TAGS PowerShell, Script, Example
+.LICENSEURI https://opensource.org/licenses/MIT
+.PROJECTURI https://github.com/jouwrepo
+.ICONURI https://raw.githubusercontent.com/jouwrepo/icon.png
+.RELEASENOTES Eerste publicatie.
+
+#>
+
 [CmdletBinding()]
 param(
     [string]$OutputPath
