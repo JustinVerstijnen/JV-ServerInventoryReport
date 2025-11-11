@@ -15,12 +15,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Update PowerShellGet and NuGet provider
-        shell: pwsh
-        run: |
-          Install-PackageProvider -Name NuGet -Force
-          Install-Module PowerShellGet -Force -AllowClobber -Scope CurrentUser
-          Install-Module PackageManagement -Force -AllowClobber -Scope CurrentUser
+      - name: Ensure NuGet and PowerShellGet are available
+  shell: pwsh
+  run: |
+    Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
+    if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
+        Write-Host "Installing NuGet provider..."
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
+    }
+    Write-Host "Updating PowerShellGet and PackageManagement..."
+    Install-Module PackageManagement -Force -AllowClobber -Scope CurrentUser
+    Install-Module PowerShellGet -Force -AllowClobber -Scope CurrentUser
 
       - name: Publish script to PowerShell Gallery
         shell: pwsh
