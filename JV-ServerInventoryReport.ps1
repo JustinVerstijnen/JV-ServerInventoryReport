@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.0.0
+.VERSION 1.0.1
 .GUID c102bae3-0380-4624-8ff4-030df9fe9f6e
 .AUTHOR Justin Verstijnen
 .COMPANYNAME JustinVerstijnen
