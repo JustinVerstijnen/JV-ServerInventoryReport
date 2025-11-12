@@ -1,16 +1,23 @@
-name: Publish JV-ServerInventoryReport to PowerShell Gallery
+name: Publish PowerShell Script to PowerShell Gallery
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'JV-ServerInventoryReport.ps1'
+      - '**/*.ps1'
       - '.github/workflows/publish.yml'
 
 jobs:
   publish:
     runs-on: windows-latest
+
+    env:
+      # Variables (change this to your script)
+      SCRIPT_NAME: JV-ServerInventoryReport
+      SCRIPT_PATH: ./JV-ServerInventoryReport.ps1
+      DISPLAY_NAME: JV-ServerInventoryReport
+      PSGALLERY_SECRET: ${{ secrets.PSGALLERY_API_KEY }}
 
     steps:
       - name: Checkout repository
@@ -19,39 +26,28 @@ jobs:
       - name: Ensure NuGet and PowerShellGet are available
         shell: pwsh
         run: |
-          Write-Host "🔧 Configuring PowerShell environment..."
           Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
-          
-          # Force TLS 1.2 for secure NuGet downloads
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
           
-          # Ensure NuGet provider is installed
           if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
-              Write-Host "Installing NuGet provider..."
               Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
           }
 
-          # Update or install required modules
           Install-Module PackageManagement -Force -AllowClobber -Scope CurrentUser
           Install-Module PowerShellGet -Force -AllowClobber -Scope CurrentUser
-
-          Write-Host "✅ Environment ready."
 
       - name: Validate script metadata
         shell: pwsh
         run: |
-          Write-Host "🔍 Validating JV-ServerInventoryReport.ps1 metadata..."
-          Test-ScriptFileInfo -Path "./JV-ServerInventoryReport.ps1"
+          Test-ScriptFileInfo -Path "$env:SCRIPT_PATH"
 
       - name: Publish script to PowerShell Gallery
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $apiKey = "${{ secrets.PSGALLERY_API_KEY }}"
-          Write-Host "🚀 Publishing JV-ServerInventoryReport.ps1 to PowerShell Gallery..."
-          Publish-Script -Path "./JV-ServerInventoryReport.ps1" -NuGetApiKey $apiKey -Verbose
+          Publish-Script -Path "$env:SCRIPT_PATH" -NuGetApiKey "$env:PSGALLERY_SECRET" -Verbose
 
       - name: Confirm publication
         shell: pwsh
         run: |
-          Write-Host "✅ Publish process completed successfully."
+          Write-Host "Successfully published $env:DISPLAY_NAME to PowerShell Gallery."
